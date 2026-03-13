@@ -1,0 +1,121 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: synapse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD_FILE: /var/pg_passwd
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - ./secrets/pg_passwd:/var/pg_passwd:ro
+      - ./db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - matrix
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: synapse
+    restart: unless-stopped
+    volumes:
+      - ./synapse/data:/data
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    # do not expose ports on host, only within network
+    # expose:
+      # - "8008"
+      # - "8448"
+    networks:
+      - matrix
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit
+    restart: unless-stopped
+    ports:
+      - "7880:7880"      # HTTP API
+      - "7881:7881"      # TCP for TURN
+      - "${TURN_PORT_RANGE_START}-${TURN_PORT_RANGE_END}:${TURN_PORT_RANGE_START}-${TURN_PORT_RANGE_END}/udp"  # UDP for TURN
+      - "5349:5349"      # TURN TCP over TLS (if using)
+      - "3478:3478/udp"  # TURN UDP over TLS (if using)
+    volumes:
+      - ./livekit/config:/config
+      - ./livekit/data:/data
+      - ./certbot/conf:/etc/letsencrypt  # so LiveKit can see certificates (optional)
+    command: --config /config/livekit.yaml
+#    depends_on:
+#      - redis
+    networks:
+      - matrix
+
+  auth-service:
+    image: ghcr.io/element-hq/lk-jwt-service:latest
+    container_name: auth-service
+    hostname: auth-service
+    environment:
+      LIVEKIT_JWT_BIND: ":8080"
+      LIVEKIT_URL: wss://${DOMAIN}/livekit/sfu
+      LIVEKIT_KEY: ${LIVEKIT_KEY}
+      LIVEKIT_SECRET: ${LIVEKIT_SECRET}
+      LIVEKIT_FULL_ACCESS_HOMESERVERS: "${DOMAIN}"
+    volumes:
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    restart: unless-stopped
+    # ports:
+    #   - "8070:8080"
+    networks:
+      - matrix
+    extra_hosts:
+      - "${DOMAIN}:host-gateway"
+
+#  redis:
+#    image: redis:7-alpine
+#    container_name: redis
+#    environment:
+#      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+#    restart: unless-stopped
+#    volumes:
+#      - ./redis/data:/data
+#    networks:
+#      - matrix
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/html:/var/www/html
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - synapse
+      - livekit
+    networks:
+      - matrix
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # command will be overridden for certificate acquisition and renewal
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    # run service, but it will sleep and check for updates every 12 hours
+    restart: unless-stopped
+    networks:
+      - matrix
+
+networks:
+  matrix:
+    driver: bridge

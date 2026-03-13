@@ -1,0 +1,28 @@
+# IDE
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+
+# logs
+logs
+*.log
+
+certbot
+config
+data
+db
+livekit
+logs
+nginx
+redis
+synapse
+
+# passwords and keys
+secrets
+
+# downloaded yq

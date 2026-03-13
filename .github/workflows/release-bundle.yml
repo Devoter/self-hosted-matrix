@@ -1,0 +1,27 @@
+name: Attach monoinit.sh to Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate monoinit.sh
+        run: |
+          chmod +x build_monoinit.sh
+          ./build_monoinit.sh
+
+      - name: Upload monoinit.sh to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: monoinit.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,29 @@
+name: Build and Release monoinit.sh
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate monoinit.sh
+        run: |
+          chmod +x build_monoinit.sh
+          ./build_monoinit.sh
+
+      - name: Create release and upload monoinit.sh
+        uses: softprops/action-gh-release@v2
+        with:
+          files: monoinit.sh
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
